@@ -12,41 +12,41 @@ class mrc:
     """
     main mrc class
     mrc 2014 standard
+    from: https://doi.org/10.1016/j.jsb.2015.04.002
 
-    11–4Int32NXNumber of columns
-    24–8Int32NYNumber of rows
-    39–12Int32NZNumber of sections
-    413–16Int32MODEData type
+    1 1–4 Int32 NXNumber of columns
+    2 4–8 Int32 NYNumber of rows
+    3 9–12 Int32 NZNumber of sections
+    4 13–16 Int32 MODEData type
 …
-    829–32Int32MXNumber of intervals along X of the “unit cell”
-    933–36Int32MYNumber of intervals along Y of the “unit cell”
-    1037–40Int32MZNumber of intervals along Z of the “unit cell”
-    11–1341–52Float32CELLACell dimension in angstroms
+    8 29–32 Int32 MXNumber of intervals along X of the “unit cell”
+    9 33–36 Int32 MYNumber of intervals along Y of the “unit cell”
+    10 37–40 Int32 MZNumber of intervals along Z of the “unit cell”
+    11 –1341–52 Float32 CELLACell dimension in angstroms
 …
-    2077–80Float32DMINMinimum density value
-    2181–84Float32DMAXMaximum density value
-    2285–88Float32DMEANMean density value
-    2389–92Int32ISPGSpace group number 0, 1, or 401
-    2493–96Int32NSYMBTNumber of bytes in extended header
+    20 77–80 Float32 DMINMinimum density value
+    21 81–84 Float32 DMAXMaximum density value
+    22 85–88 Float32 DMEANMean density value
+    23 89–92 Int32 ISPGSpace group number 0, 1, or 401
+    24 93–96 Int32 NSYMBTNumber of bytes in extended header
 …
-    27105–108CharEXTTYPEExtended header type
-    28109–112Int32NVERSIONFormat version identification number
+    27 105–108 Char EXTTYPEExtended header type
+    28 109–112 Int32 NVERSIONFormat version identification number
 …
-    50–52197–208Float32ORIGINOrigin in X, Y, Z used in transform
-    53209–212CharMAPCharacter string ‘MAP’ to identify file type
-    54213–216CharMACHSTMachine stamp
-    55217–220Float32RMSRMS deviation of map from mean density
-
+    50–52 197–208 Float32 ORIGINOrigin in X, Y, Z used in transform
+    53 209–212 Char MAPCharacter string ‘MAP’ to identify file type
+    54 213–216 Char MACHSTMachine stamp
+    55 217–220 Float32 RMSRMS deviation of map from mean density
     """
     def __init__(self):
         # self.path2 = path2
         # self.header = None
         self.headerext = None
         self.image = None
-        print(self.__dict__)
+        # print(self.__dict__)
 
-    def header(self, path):
-        self.path = path
+    def header(self):
+        # self.path = path
         with open(self.path, "rb") as f:
             header = 220 # 220 bytes
             data = f.read(header)
@@ -83,15 +83,32 @@ class mrc:
 
             self.start = 1024 + self.nsymbt[0]
 
-    def read_data(self):
+    def read_mrc(self, path):
+        """
+        store image part into numpy array
+        """
+        self.path = path
         with open(self.path, "rb") as f:
             image_data = f.read()
 
+
+        # header
+        
+
+
+
+        b  = np.frombuffer(image_data, dtype=np.int32, count=-1, offset=1024)
+        self.img = np.reshape(b, (160,160,160))            
+
+        return self.img
+
         # image = Image.open(io.BytesIO(image_data[self.start : self.get_size]))
         #image.show()
-        a = np.frombuffer(image_data, dtype=int, count=-1, offset=0)
-        return a
         # print(a.byteorder)
+
+        # a = np.frombuffer(image_data, dtype=int, count=-1, offset=0)
+        # return a
+
 
 
     def check_size(self):
@@ -126,9 +143,10 @@ class mrc:
 
 def main():
     
+    path = '/Users/martin/wrk/run1.mrc'
     test = mrc()
-    #test.header('/Users/martin/wrk/run1.mrc')
-    test.header('/home/martin/wrk/run87_class001.mrc')
+    test.header(path)
+    # test.header('/home/martin/wrk/run87_class001.mrc')
 
     print( test.headerprint )
     print( test.get_size )
@@ -136,7 +154,9 @@ def main():
 
     print( test.addsth('martin'))
 
-    a = test.read_data()
+    a = test.read_data(path)
+    e = 'main() end'
+    print(e)
 
 if __name__ == "__main__":
     main()
