@@ -3,6 +3,10 @@
 
 import os
 import struct
+import numpy as np
+import matplotlib.pylab as plt
+from PIL import Image
+import io
 
 class mrc:
     """
@@ -79,6 +83,17 @@ class mrc:
 
             self.start = 1024 + self.nsymbt[0]
 
+    def read_data(self):
+        with open(self.path, "rb") as f:
+            image_data = f.read()
+
+        # image = Image.open(io.BytesIO(image_data[self.start : self.get_size]))
+        #image.show()
+        a = np.frombuffer(image_data, dtype=int, count=-1, offset=0)
+        return a
+        # print(a.byteorder)
+
+
     def check_size(self):
         """
         check whether or not the mrc file has size expected from header
@@ -86,9 +101,10 @@ class mrc:
         expected_size = 1024 + self.nsymbt[0] * 80 * 4 + self.nx[0] * self.ny[0] * self.nz[0] * 4 # for test, mode is ignored
         file_size = self.get_size
 
+        print('check file size: expected size = {} actual size = {}'.format(expected_size, file_size))
         if expected_size != file_size:
             print("file size not matching header info!!!")
-            print('check file size: expected size = {} actual size = {}'.format(expected_size, file_size))
+
 
     @property
     def get_size(self):
@@ -108,11 +124,19 @@ class mrc:
 
 
 
-test = mrc()
-test.header('/Users/martin/wrk/run1.mrc')
+def main():
+    
+    test = mrc()
+    #test.header('/Users/martin/wrk/run1.mrc')
+    test.header('/home/martin/wrk/run87_class001.mrc')
 
-print( test.headerprint )
-print( test.get_size )
-test.check_size()
+    print( test.headerprint )
+    print( test.get_size )
+    test.check_size()
 
-print( test.addsth('martin'))
+    print( test.addsth('martin'))
+
+    a = test.read_data()
+
+if __name__ == "__main__":
+    main()
