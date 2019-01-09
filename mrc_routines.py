@@ -45,8 +45,8 @@ class mrc:
         self.image = None
         # print(self.__dict__)
 
-    def header(self):
-        # self.path = path
+    def header(self, path):
+        self.path = path
         with open(self.path, "rb") as f:
             header = 220 # 220 bytes
             data = f.read(header)
@@ -93,7 +93,7 @@ class mrc:
 
 
         # header
-        
+
 
 
 
@@ -154,7 +154,7 @@ def main():
 
     print( test.addsth('martin'))
 
-    a = test.read_data(path)
+    a = test.read_mrc(path)
     e = 'main() end'
     print(e)
 
