@@ -158,6 +158,15 @@ class mrc:
         #     keys.append([key, value])
         # return self.__dict__
 
+def linear_transformation(src, a):
+    # from https://mmas.github.io/linear-transformations-numpy
+    M, N = src.shape
+    points = np.mgrid[0:N, 0:M].reshape((2, M*N))
+    new_points = np.linalg.inv(a).dot(points).round().astype(int)
+    x, y = new_points.reshape((2, M, N), order='F')
+    indices = x + N*y
+    return np.take(src, indices, mode='wrap')
+
 
 def main():
     
@@ -171,6 +180,24 @@ def main():
     # plt.pyplot.imshow(test.img[80]) 
     # plt.pyplot.gray()
     # plt.pyplot.show()
+
+    # transformations
+    # lin trans: parallel stay parallel
+    # scaling: A[x y]
+    # A [ 2 0 ]
+    #   [ 0 1 ]
+    aux = np.ones((100, 100), dtype=int)
+    src = np.vstack([np.c_[aux, 2*aux], np.c_[3*aux, 4*aux]])
+
+    angle = np.sin(np.pi*60./180.)
+    # angle = 1
+    A = np.array([[angle, 0],
+                [0, 1]])
+    # src = test.img[80]
+    dst = linear_transformation(src, A)
+    # dst = np.dot(test.img[80], A)
+    plt.imshow(dst)
+    plt.show()
 
 if __name__ == "__main__":
     main()
