@@ -176,6 +176,9 @@ class mrc:
       else:
          ValueError('slice width is outside of image, nx: {}, from_x: {}, to_x: {}'.format(self.nx, from_x, to_x))
 
+   def get_mode(self, data_type):
+      pass
+
    def write_mrc(self, img, header):
       pass
       # construct header
@@ -185,11 +188,54 @@ class mrc:
       # dimension .shape
       nx, ny, nz = img.shape
 
+      # mode
+      mode = 2
+
+      dmin = img.shape
+
+      struct.pack_into('@i', frame, 0, nx)
+      struct.pack_into('@i', frame, 4, ny)
+      struct.pack_into('@i', frame, 8, nz)
+      struct.pack_into('@i', frame, 12, mode)
+      struct.pack_into('@i', frame, 16, nxstart)
+      struct.pack_into('@i', frame, 20, nystart)
+      struct.pack_into('@i', frame, 24, nzstart)
+      struct.pack_into('@i', frame, 28, mx)
+      struct.pack_into('@i', frame, 32, my)
+      struct.pack_into('@i', frame, 36, mz)
+      struct.pack_into('@3f', frame, 40, cella)
+      struct.pack_into('@3f', frame, 52, cellb)
+      struct.pack_into('@i', frame, 64, mapc)
+      struct.pack_into('@i', frame, 68, mapr)
+      struct.pack_into('@i', frame, 72, maps)
+      struct.pack_into('@f', frame, 76, dmin)
+      struct.pack_into('@f', frame, 80, dmax)
+      struct.pack_into('@f', frame, 84, mean)
+      struct.pack_into('@i', frame, 88, ispg)
+      struct.pack_into('@i', frame, 92, nsymbt)
+      struct.pack_into('@4c', frame, 104, exttyp)
+      struct.pack_into('@i', frame, 108, nversion) # ...
+      struct.pack_into('@3f', frame, 196, origin)
+      struct.pack_into('@4s', frame, 208, mapstr)
+      struct.pack_into('@4s', frame, 212, machst) # endiannes
+      struct.pack_into('@f', frame, 216, rms)
+      struct.pack_into('@i', frame, 220, nlabl)
+
+
+def linear_transformation(src, a):
+   # from https://mmas.github.io/linear-transformations-numpy
+   M, N = src.shape
+   points = np.mgrid[0:N, 0:M].reshape((2, M*N))
+   new_points = np.linalg.inv(a).dot(points).round().astype(int)
+   x, y = new_points.reshape((2, M, N), order='F')
+   indices = x + N*y
+   return np.take(src, indices, mode='wrap')
+
 
 def main():
     
-   # path = '/Users/martin/wrk/run1.mrc'
-   path = '/home/martin/wrk/run87_class001.mrc'
+   path = '/Users/martin/wrk/run1.mrc'
+   # path = '/home/martin/wrk/run87_class001.mrc'
    test = mrc()
    test.read_mrc(path)
    # print(test.headerprint)
@@ -201,6 +247,24 @@ def main():
 
    # add stripes, make band
    # write out mrc
+
+   # transformations
+   # lin trans: parallel stay parallel
+   # scaling: A[x y]
+   # A [ 2 0 ]
+   #   [ 0 1 ]
+   aux = np.ones((100, 100), dtype=int)
+   src = np.vstack([np.c_[aux, 2*aux], np.c_[3*aux, 4*aux]])
+   angle = np.sin(np.pi*60./180.)
+   # angle = 1
+   A = np.array([[angle, 0],
+               [0, 1]])
+   # src = test.img[80]
+   dst = linear_transformation(src, A)
+   # dst = np.dot(test.img[80], A)
+   plt.imshow(dst)
+   plt.show()
+
 
 if __name__ == "__main__":
    main()
