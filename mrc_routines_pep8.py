@@ -56,7 +56,8 @@ class mrc:
         self._data_mode
         self._check_size
 
-        image = np.frombuffer(mrc_file, dtype=self.dtype, count=-1, offset=self.header_size)
+        image = np.frombuffer(mrc_file, dtype=self.dtype,
+                              count=-1, offset=self.header_size)
         self.img = np.reshape(image, (self.nx[0], self.ny[0], self.nz[0]))
         # return self.img
 
@@ -84,11 +85,11 @@ class mrc:
         self.nsymbt = struct.unpack('@i', mrc_file[92:96])
         # self.extra = struct.unpack('@220s', mrc_file[0:220]) # ...
         self.exttyp = struct.unpack('@4c', mrc_file[104:108])
-        self.nversion = struct.unpack('@i', mrc_file[108:112]) # ...
+        self.nversion = struct.unpack('@i', mrc_file[108:112])  # ...
         self.origin = struct.unpack('@3f', mrc_file[196:208])
         self.map = struct.unpack('@4s', mrc_file[208:212])[0].decode()
         # self.machst = struct.unpack('@4x', mrc_file[212:216])[0] # endiannes
-        self.machst = mrc_file[212:216] # endiannes
+        self.machst = mrc_file[212:216]  # endiannes
         self.rms = struct.unpack('@f', mrc_file[216:220])
         self.nlabl = struct.unpack('@i', mrc_file[220:224])
         # self.labels = struct.unpack('@800s', mrc_file[224:1024])[0].decode()
@@ -129,7 +130,8 @@ class mrc:
             self.dtype = np.float32
 
         elif self.mode[0] == 3:
-            self.dtype = None # no native dtype, needs np.dtype([('re', np.int16), ('im', np.int16)])
+            # no native dtype, needs np.dtype([('re', np.int16), ('im', np.int16)])
+            self.dtype = None
 
         elif self.mode[0] == 4:
             self.dtype = np.complex32
@@ -138,7 +140,8 @@ class mrc:
             self.dtype = np.uint16
 
         else:
-            raise ValueError('np.dtype: {}, mode: {} (mode 3 complex int16 is not supported)'.format(self.dtype, self.mode[0]))
+            raise ValueError('np.dtype: {}, mode: {} (mode 3 complex int16 is not supported)'.format(
+                self.dtype, self.mode[0]))
 
         return self.dtype
 
@@ -147,16 +150,20 @@ class mrc:
         """
         check whether or not the mrc file has size expected from header
         """
-        image_size = self.nx[0] * self.ny[0] * self.nz[0] * np.dtype(self.dtype).itemsize
+        image_size = self.nx[0] * self.ny[0] * \
+            self.nz[0] * np.dtype(self.dtype).itemsize
         expected_size = self.header_size + image_size
         file_size = os.path.getsize(self.path)
 
         print('check file size:')
         print('header: {}'.format(self.header_size))
-        print('image: {} ({},{},{},{} bytes)'.format(image_size, self.nx[0], self.ny[0], self.nz[0], np.dtype(self.dtype).itemsize))
-        print('expected size = {}, actual size = {}'.format(expected_size, file_size))
+        print('image: {} ({},{},{},{} bytes)'.format(
+            image_size, self.nx[0], self.ny[0], self.nz[0], np.dtype(self.dtype).itemsize))
+        print('expected size = {}, actual size = {}'.format(
+            expected_size, file_size))
         if expected_size != file_size:
-            raise ValueError('file size not matching header info!!! file: {}'.format(self.path))
+            raise ValueError(
+                'file size not matching header info!!! file: {}'.format(self.path))
 
     @property
     def headerprint(self):
@@ -173,7 +180,8 @@ class mrc:
         if to_x < self.nx[0]:
             return img[:, from_x:(from_x+width)]
         else:
-            ValueError('slice width is outside of image, nx: {}, from_x: {}, to_x: {}'.format(self.nx, from_x, to_x))
+            ValueError('slice width is outside of image, nx: {}, from_x: {}, to_x: {}'.format(
+                self.nx, from_x, to_x))
 
     def get_mode(self, data_type):
         pass
@@ -215,10 +223,10 @@ class mrc:
         struct.pack_into('@i', frame, 88, ispg)
         struct.pack_into('@i', frame, 92, nsymbt)
         struct.pack_into('@4c', frame, 104, exttyp)
-        struct.pack_into('@i', frame, 108, nversion) # ...
+        struct.pack_into('@i', frame, 108, nversion)  # ...
         struct.pack_into('@3f', frame, 196, origin)
         struct.pack_into('@4s', frame, 208, mapstr)
-        struct.pack_into('@4s', frame, 212, machst) # endiannes
+        struct.pack_into('@4s', frame, 212, machst)  # endiannes
         struct.pack_into('@f', frame, 216, rms)
         struct.pack_into('@i', frame, 220, nlabl)
 
