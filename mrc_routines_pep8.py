@@ -177,8 +177,9 @@ class mrc:
         """
         returns slice of img from [x_coord, x_coord+width]
         """
+        to_x = from_x + width
         if to_x < self.nx[0]:
-            return img[:, from_x:(from_x+width)]
+            return img[:, from_x:to_x]
         else:
             ValueError('slice width is outside of image, nx: {}, from_x: {}, to_x: {}'.format(
                 self.nx, from_x, to_x))
@@ -186,17 +187,50 @@ class mrc:
     def get_mode(self, data_type):
         pass
 
-    def write_mrc(self, img, header):
-        pass
+    def write_mrc(self, img):
         # construct header
         frame = bytearray(1024)
         # struct.pack_into(fmt, buffer, offset, v1)
 
+        # get from read mrc if possible
+        try:
+            print(self.__dict__)
+        except AttributeError:
+            print('no opened img')
+
+        header_args = dict.fromkeys(['nx', 'ny', 'nz', 'mode', 'nxstart', 'nystart', 'nzstart', 
+            'mx', 'my', 'mz', 'cella', 'cellb', 'mapc', 'mapr', 'maps', 'dmin', 'dmax', 'mean', 
+            'ispg', 'nsymbt', 'exttyp', 'nversion', 'origin', 'mapstr', 'machst', 'rms', 'nlabl'])
+
+        print('header args')
+        print(header_args)
+        # header_args = {'nx':None, 'ny':None, 'nz':None}
+
+        for key, value in self.__dict__.items():
+            if key in header_args:
+                header_args[key] = value
+        print(header_args)
+
+        # header should it be **args, *kwargs, list, dict
+        # want to avoid typing in several time all the attributes
+        # for mode a list outside the class for more readable code?
+        # when reading a file put header attributes in self.header.*
+        # posittion and whole int and float types could be in a dictionary or list outside
+
+    # def _unpack(self, fmt, data):
+    #     return struct.unpack(self._endian + fmt, data)
+
+    # def _pack(self, fmt, *values):
+    #     return struct.pack(self._endian + fmt, *values)
+
+
         # dimension .shape
         nx, ny, nz = img.shape
-
         # mode
         mode = 2
+
+        header_args['nx'] = nx
+        print(nx, header_args)
 
         dmin = img.shape
 
@@ -206,29 +240,29 @@ class mrc:
         struct.pack_into('@i', frame, 4, ny)
         struct.pack_into('@i', frame, 8, nz)
         struct.pack_into('@i', frame, 12, mode)
-        struct.pack_into('@i', frame, 16, nxstart)
-        struct.pack_into('@i', frame, 20, nystart)
-        struct.pack_into('@i', frame, 24, nzstart)
-        struct.pack_into('@i', frame, 28, mx)
-        struct.pack_into('@i', frame, 32, my)
-        struct.pack_into('@i', frame, 36, mz)
-        struct.pack_into('@3f', frame, 40, cella)
-        struct.pack_into('@3f', frame, 52, cellb)
-        struct.pack_into('@i', frame, 64, mapc)
-        struct.pack_into('@i', frame, 68, mapr)
-        struct.pack_into('@i', frame, 72, maps)
-        struct.pack_into('@f', frame, 76, dmin)
-        struct.pack_into('@f', frame, 80, dmax)
-        struct.pack_into('@f', frame, 84, mean)
-        struct.pack_into('@i', frame, 88, ispg)
-        struct.pack_into('@i', frame, 92, nsymbt)
-        struct.pack_into('@4c', frame, 104, exttyp)
-        struct.pack_into('@i', frame, 108, nversion)  # ...
-        struct.pack_into('@3f', frame, 196, origin)
-        struct.pack_into('@4s', frame, 208, mapstr)
-        struct.pack_into('@4s', frame, 212, machst)  # endiannes
-        struct.pack_into('@f', frame, 216, rms)
-        struct.pack_into('@i', frame, 220, nlabl)
+        # struct.pack_into('@i', frame, 16, nxstart)
+        # struct.pack_into('@i', frame, 20, nystart)
+        # struct.pack_into('@i', frame, 24, nzstart)
+        # struct.pack_into('@i', frame, 28, mx)
+        # struct.pack_into('@i', frame, 32, my)
+        # struct.pack_into('@i', frame, 36, mz)
+        # struct.pack_into('@3f', frame, 40, cella)
+        # struct.pack_into('@3f', frame, 52, cellb)
+        # struct.pack_into('@i', frame, 64, mapc)
+        # struct.pack_into('@i', frame, 68, mapr)
+        # struct.pack_into('@i', frame, 72, maps)
+        # struct.pack_into('@f', frame, 76, dmin)
+        # struct.pack_into('@f', frame, 80, dmax)
+        # struct.pack_into('@f', frame, 84, mean)
+        # struct.pack_into('@i', frame, 88, ispg)
+        # struct.pack_into('@i', frame, 92, nsymbt)
+        # struct.pack_into('@4c', frame, 104, exttyp)
+        # struct.pack_into('@i', frame, 108, nversion)  # ...
+        # struct.pack_into('@3f', frame, 196, origin)
+        # struct.pack_into('@4s', frame, 208, mapstr)
+        # struct.pack_into('@4s', frame, 212, machst)  # endiannes
+        # struct.pack_into('@f', frame, 216, rms)
+        # struct.pack_into('@i', frame, 220, nlabl)
 
 
 def linear_transformation(src, a):
@@ -243,10 +277,12 @@ def linear_transformation(src, a):
 
 def main():
 
-    path = '/Users/martin/wrk/run1.mrc'
-    # path = '/home/martin/wrk/run87_class001.mrc'
+    # path = '/Users/martin/wrk/run1.mrc'
+    path = '/home/martin/wrk/run87_class001.mrc'
     test = mrc()
     test.read_mrc(path)
+    sl = test.make_slice(test.img, 20, 20)
+    test.write_mrc(sl)    
     # print(test.headerprint)
 
     # # image display
@@ -257,22 +293,23 @@ def main():
     # add stripes, make band
     # write out mrc
 
-    # transformations
-    # lin trans: parallel stay parallel
-    # scaling: A[x y]
-    # A [ 2 0 ]
-    #   [ 0 1 ]
-    aux = np.ones((100, 100), dtype=int)
-    src = np.vstack([np.c_[aux, 2*aux], np.c_[3*aux, 4*aux]])
-    angle = np.sin(np.pi*60./180.)
-    # angle = 1
-    A = np.array([[angle, 0],
-                  [0, 1]])
-    # src = test.img[80]
-    dst = linear_transformation(src, A)
-    # dst = np.dot(test.img[80], A)
-    plt.imshow(dst)
-    plt.show()
+    # # transformations
+    # # lin trans: parallel stay parallel
+    # # scaling: A[x y]
+    # # A [ 2 0 ]
+    # #   [ 0 1 ]
+    # aux = np.ones((100, 100), dtype=int)
+    # src = np.vstack([np.c_[aux, 2*aux], np.c_[3*aux, 4*aux]])
+    # angle = np.sin(np.pi*60./180.)
+    # # angle = 1
+    # A = np.array([[angle, 0],
+    #               [0, 1]])
+    # # src = test.img[80]
+    # dst = linear_transformation(src, A)
+    # # dst = np.dot(test.img[80], A)
+    # plt.imshow(dst)
+    # plt.show()
+
 
 
 if __name__ == "__main__":
