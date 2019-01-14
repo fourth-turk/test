@@ -9,6 +9,40 @@ from PIL import Image
 import io
 
 MODE = []
+HEADER = ('nx', 'ny', 'nz', 'mode', 'nxstart', 'nystart', 'nzstart', 
+            'mx', 'my', 'mz', 'cella', 'cellb', 'mapc', 'mapr', 'maps', 'dmin', 'dmax', 'mean', 
+            'ispg', 'nsymbt', 'exttyp', 'nversion', 'origin', 'mapstr', 'machst', 'rms', 'nlabl')
+
+
+HEADER_INFO = (
+# (variable, start byte , end byte, data type)
+    ('nx', 0, 4, 'i'), 
+    ('ny', 4, 8, 'i'),
+    ('nz', 8, 12, 'i'),
+    ('mode', 12, 16, 'i'),
+    ('nxstart', 16, 20, 'i'),
+    ('nystart', 20, 24, 'i'),
+    ('nzstart', 24, 28, 'i'),
+    ('mx', 28, 32, 'i'),
+    ('my', 32, 36, 'i'),
+    ('mz', 36, 40, 'i'),
+    ('cella', 40, 52, '3f'),
+    ('cellb', 52, 64, '3f'),
+    ('mapc', 64, 68, 'i'),
+    ('mapr', 68, 72, 'i'),
+    ('maps', 72, 76, 'i'),
+    ('dmin', 76, 80, 'f'),
+    ('dmax', 80, 84, 'f'),
+    ('mean', 84, 88, 'f'),
+    ('ispg', 88, 92, 'i'),
+    ('nsymbt', 92, 96, 'i'),
+    ('exttyp', 104, 108, '4c'),
+    ('nversion', 108, 112, 'i'),
+    ('origin', 196, 208, '3f'),
+    ('map', 208, 212, '4s'),
+    ('machst', 212, 216, '4x'),
+    ('rms', 216, 220, 'f'),
+    ('nlabl', 220, 224, 'i'))
 
 
 class mrc:
@@ -42,6 +76,10 @@ class mrc:
     55 217–220 Float32 RMSRMS deviation of map from mean density
     """
 
+    def _unpack(self, fmt, data, start, end):
+        return struct.unpack(fmt, data[start:end])
+
+
     def read_mrc(self, path):
         """
         store image part into numpy array
@@ -50,6 +88,7 @@ class mrc:
         with open(self.path, "rb") as f:
             mrc_file = f.read()
 
+        # self.mrc_file = mrc_file
         # header
         self._header(mrc_file)
         self._pxsize
@@ -101,6 +140,15 @@ class mrc:
         from: https://doi.org/10.1016/j.jsb.2015.04.002
         """
         self.header_size = 1024 + self.nsymbt[0]
+
+        self.header = {'nx':self.nx, 'ny':self.ny, 'nz':self.nz, 'mode':self.mode,
+                       'nxstart':self.nxstart, 'nystart':self.nystart, 'nzstart':self.nzstart,
+                       'mx':self.mx, 'my':self.my, 'mz':self.mz, 'cella':self.cella, 'cellb':self.cellb,
+                       'mapc':self.mapc, 'mapr':self.mapr, 'maps':self.maps, 'dmin':self.dmin,
+                       'dmax':self.dmax, 'mean':self.mean, 'ispg':self.ispg, 'nsymbt':self.nsymbt,
+                       'exttyp':self.exttyp, 'nversion':self.nversion, 'origin':self.origin,
+                       'map':self.map, 'machst':self.machst, 'rms':self.rms, 'nlabl':self.nlabl}
+
 
     @property
     def _pxsize(self):
@@ -217,6 +265,7 @@ class mrc:
         # when reading a file put header attributes in self.header.*
         # posittion and whole int and float types could be in a dictionary or list outside
 
+
     # def _unpack(self, fmt, data):
     #     return struct.unpack(self._endian + fmt, data)
 
@@ -277,8 +326,8 @@ def linear_transformation(src, a):
 
 def main():
 
-    # path = '/Users/martin/wrk/run1.mrc'
-    path = '/home/martin/wrk/run87_class001.mrc'
+    path = '/Users/martin/wrk/run1.mrc'
+    # path = '/home/martin/wrk/run87_class001.mrc'
     test = mrc()
     test.read_mrc(path)
     sl = test.make_slice(test.img, 20, 20)
@@ -310,7 +359,12 @@ def main():
     # plt.imshow(dst)
     # plt.show()
 
+    print(test.header)
 
+    for i in HEADER_INFO:
+        print(i)
+        # print(_unpack(i[3], test.mrc_file, i[1], i[2]))
+    print(test.header)
 
 if __name__ == "__main__":
     main()
