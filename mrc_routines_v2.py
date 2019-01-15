@@ -37,7 +37,7 @@ HEADER_INFO = (
     ('mean', 'i', 84, 88),
     ('ispg', 'i', 88, 92),
     ('nsymbt', 'i', 92, 96),
-    ('exttyp', '4c', 104, 108),
+    ('exttyp', '4s', 104, 108),
     ('nversion', 'i', 108, 112),
     ('origin', '3f', 196, 208),
     ('map', '4s', 208, 212),
@@ -239,6 +239,7 @@ class mrc:
 
         print('check file size:')
         print('header: {}'.format(self.header_end))
+        print('header extended: {}'.format(self.header_extended))
         print('image: {} ({},{},{},{} bytes)'.format(
             image_size, self.header['nx'][0], self.header['ny'][0], self.header['nz'][0], np.dtype(self.dtype).itemsize))
         print('expected size = {}, actual size = {}'.format(
@@ -259,12 +260,20 @@ class mrc:
         """
         returns slice of img from [x_coord, x_coord+width]
         """
+        print('\nimg debug')
         print(img.shape)
-        nx, ny = img.shape
-
+        nx, ny, nz = img.shape
+        # im = img.reshape(nx, ny)
+        # img = np.flip(img, 1)
+        # nx, ny = img.squeeze().shape
+        print(nx, ny)
+        # print(img.squeeze()[:,0:3709].shape)
+        
         to_x = from_x + width
         if to_x < self.header['nx'][0]:
-            return img[:, from_x:to_x]
+            return img[:, :3708]
+            # return img[:, :3709, :]
+            # return img[:, from_x:to_x]
         else:
             ValueError('slice width is outside of image, nx: {}, from_x: {}, to_x: {}'.format(nx, from_x, to_x))
 
@@ -337,8 +346,8 @@ class mrc:
 
         # things calculated for new image
         # dimension .shape
-        nx, ny = img.shape
-        nz = 0
+        nx, ny, nz = img.shape
+        # nz = 1
         # mode
         mode = self.get_mode(img.dtype)
 
@@ -351,7 +360,7 @@ class mrc:
 
         ha['nx'] = nx
         ha['ny'] = ny
-        ha['nz'] = 1
+        ha['nz'] = nz
         ha['mode'] = self.get_mode(img.dtype)
         ha['nxstart'] = self.header['nxstart'][0]
         ha['nystart'] = self.header['nystart'][0]
@@ -359,8 +368,8 @@ class mrc:
         ha['mx'] = nx
         ha['my'] = ny
         ha['mz'] = 1
-        ha['cella'] = (self.pxsize * nx, self.pxsize * ny, 0)
-        ha['cellb'] = (90.0, 90.0, 0)
+        ha['cella'] = (self.pxsize * nx, self.pxsize * ny, self.pxsize * ha['mz'])
+        ha['cellb'] = (90.0, 90.0, 90.0)
         ha['dmin'] = np.amin(img)
         ha['dmax'] = np.amax(img)
         ha['mean'] = np.mean(img)
@@ -403,6 +412,7 @@ class mrc:
         struct.pack_into('@i', frame, 220, ha['nlabl'][0])
 
         self.header_test(frame)
+        print(img.shape)
         new_file = frame + img.tobytes()  #.flatten()
 
         pf = 'test_slice.mrc'
@@ -424,16 +434,16 @@ def linear_transformation(src, a):
 
 def main():
 
-    # path = '/Users/martin/wrk/run1.mrc'
-    path = '/home/martin/wrk/run87_class001.mrc'
+    path = '/Users/martin/wrk/0001.mrc'
+    # path = '/home/martin/wrk/run87_class001.mrc'
     test = mrc()
     test.read_mrc(path)
-    sl = test.make_slice(test.img[80], 20, 20)
+    sl = test.make_slice(test.img, 0, 3709)
     test.write_mrc(sl)    
     # print(test.headerprint)
 
 
-    pf = '/home/martin/wrk/test/test_slice.mrc'
+    pf = '/Users/martin/wrk/test/test_slice.mrc'
     # # image display
     tt = mrc()
     tt.read_mrc(pf)
@@ -461,8 +471,13 @@ def main():
     # plt.imshow(dst)
     # plt.show()
 
-    plt.imshow(tt.img)
-    plt.show()
+    my_dpi = 96
+
+    print(tt.img.shape)
+    # plt.figure(figsize=(tt.img.shape[0]/my_dpi/3, tt.img.shape[1]/my_dpi/3), dpi=my_dpi)
+    # plt.imshow(tt.img.squeeze())
+    # plt.gray()
+    # plt.show()
 
     # print(test.header)
 
