@@ -5,6 +5,7 @@ import os
 import struct
 import numpy as np
 import matplotlib.pylab as plt
+#import matplotlib.pyplot as plt
 from PIL import Image
 import io
 
@@ -16,37 +17,40 @@ HEADER = ('nx', 'ny', 'nz', 'mode', 'nxstart', 'nystart', 'nzstart',
 
 HEADER_INFO = (
 # (variable, start byte , end byte, data type)
-    ('nx', 0, 4, 'i'), 
-    ('ny', 4, 8, 'i'),
-    ('nz', 8, 12, 'i'),
-    ('mode', 12, 16, 'i'),
-    ('nxstart', 16, 20, 'i'),
-    ('nystart', 20, 24, 'i'),
-    ('nzstart', 24, 28, 'i'),
-    ('mx', 28, 32, 'i'),
-    ('my', 32, 36, 'i'),
-    ('mz', 36, 40, 'i'),
-    ('cella', 40, 52, '3f'),
-    ('cellb', 52, 64, '3f'),
-    ('mapc', 64, 68, 'i'),
-    ('mapr', 68, 72, 'i'),
-    ('maps', 72, 76, 'i'),
-    ('dmin', 76, 80, 'f'),
-    ('dmax', 80, 84, 'f'),
-    ('mean', 84, 88, 'f'),
-    ('ispg', 88, 92, 'i'),
-    ('nsymbt', 92, 96, 'i'),
-    ('exttyp', 104, 108, '4c'),
-    ('nversion', 108, 112, 'i'),
-    ('origin', 196, 208, '3f'),
-    ('map', 208, 212, '4s'),
-    ('machst', 212, 216, '4x'),
-    ('rms', 216, 220, 'f'),
-    ('nlabl', 220, 224, 'i'))
+    ('nx', 'i', 0, 4), 
+    ('ny', 'i', 4, 8),
+    ('nz', 'i', 8, 12),
+    ('mode', 'i', 12, 16),
+    ('nxstart', 'i', 16, 20),
+    ('nystart', 'i', 20, 24),
+    ('nzstart', 'i', 24, 28),
+    ('mx', 'i', 28, 32),
+    ('my', 'i', 32, 36),
+    ('mz', 'i', 36, 40),
+    ('cella', '3f', 40, 52),
+    ('cellb', '3f', 52, 64),
+    ('mapc', 'i', 64, 68),
+    ('mapr', 'i', 68, 72),
+    ('maps', 'i', 72, 76),
+    ('dmin', 'i', 76, 80),
+    ('dmax', 'i', 80, 84),
+    ('mean', 'i', 84, 88),
+    ('ispg', 'i', 88, 92),
+    ('nsymbt', 'i', 92, 96),
+    ('exttyp', '4c', 104, 108),
+    ('nversion', 'i', 108, 112),
+    ('origin', '3f', 196, 208),
+    ('map', '4s', 208, 212),
+    ('machst', '4s', 212, 216),
+    ('rms', 'f', 216, 220),
+    ('nlabl', 'i', 220, 224))
 
 
 class mrc:
     """
+    useful:
+    http://msg.ucsf.edu/IVE/IVE4_HTML/EditHeader2.html
+
     main mrc class
     mrc 2014 standard
     from: https://doi.org/10.1016/j.jsb.2015.04.002
@@ -92,15 +96,35 @@ class mrc:
         # return header, image
         self.mrc_file = mrc_file
         # header
+        self._header_new(mrc_file)
         self._header(mrc_file)
         self._pxsize
-        self._data_mode
+        self._data_type
         self._check_size
 
+
         image = np.frombuffer(mrc_file, dtype=self.dtype,
-                              count=-1, offset=self.header_size)
-        self.img = np.reshape(image, (self.nx[0], self.ny[0], self.nz[0]))
+                              count=-1, offset=self.header_end)
+        self.img = np.reshape(image, (self.header['nx'][0], self.header['ny'][0], self.header['nz'][0]))
         # return self.img
+
+    def _header_new(self, mrc_file):
+        header = dict.fromkeys([i[0] for i in HEADER_INFO])
+        for i in HEADER_INFO:
+            header[i[0]] = struct.unpack(i[1], mrc_file[i[2]:i[3]])
+        self.header = header
+
+        # extended header
+        if header['nsymbt'][0] != 0:
+            self.header_extended = mrc_file[1024:(1024 + header['nsymbt'][0])]
+        elif header['nsymbt'][0] == 0:
+            self.header_extended = None
+        else:
+            raise ValueError('Extended header not defined in mrc! nsymbt: {}'.format(header['nsymbt']))
+
+        # image data begins after
+        self.header_end = 1024 + header['nsymbt'][0]
+
 
     def _header(self, mrc_file):
         # convention from http://www.ccpem.ac.uk/mrc_format/mrc2014.php#note8
@@ -125,7 +149,7 @@ class mrc:
         self.ispg = struct.unpack('@i', mrc_file[88:92])
         self.nsymbt = struct.unpack('@i', mrc_file[92:96])
         # self.extra = struct.unpack('@220s', mrc_file[0:220]) # ...
-        self.exttyp = struct.unpack('@4c', mrc_file[104:108])
+        self.exttyp = struct.unpack('@4s', mrc_file[104:108])
         self.nversion = struct.unpack('@i', mrc_file[108:112])  # ...
         self.origin = struct.unpack('@3f', mrc_file[196:208])
         self.map = struct.unpack('@4s', mrc_file[208:212])[0].decode()
@@ -141,24 +165,31 @@ class mrc:
         of bytes used for symmetry data inserted between the main header (1024 bytes in length) and the data block
         from: https://doi.org/10.1016/j.jsb.2015.04.002
         """
-        self.header_size = 1024 + self.nsymbt[0]
+        self.header_end = 1024 + self.nsymbt[0]
 
-        self.header = {'nx':self.nx, 'ny':self.ny, 'nz':self.nz, 'mode':self.mode,
-                       'nxstart':self.nxstart, 'nystart':self.nystart, 'nzstart':self.nzstart,
-                       'mx':self.mx, 'my':self.my, 'mz':self.mz, 'cella':self.cella, 'cellb':self.cellb,
-                       'mapc':self.mapc, 'mapr':self.mapr, 'maps':self.maps, 'dmin':self.dmin,
-                       'dmax':self.dmax, 'mean':self.mean, 'ispg':self.ispg, 'nsymbt':self.nsymbt,
-                       'exttyp':self.exttyp, 'nversion':self.nversion, 'origin':self.origin,
-                       'map':self.map, 'machst':self.machst, 'rms':self.rms, 'nlabl':self.nlabl}
+        # self.header = {'nx':self.nx, 'ny':self.ny, 'nz':self.nz, 'mode':self.mode,
+        #                'nxstart':self.nxstart, 'nystart':self.nystart, 'nzstart':self.nzstart,
+        #                'mx':self.mx, 'my':self.my, 'mz':self.mz, 'cella':self.cella, 'cellb':self.cellb,
+        #                'mapc':self.mapc, 'mapr':self.mapr, 'maps':self.maps, 'dmin':self.dmin,
+        #                'dmax':self.dmax, 'mean':self.mean, 'ispg':self.ispg, 'nsymbt':self.nsymbt,
+        #                'exttyp':self.exttyp, 'nversion':self.nversion, 'origin':self.origin,
+        #                'map':self.map, 'machst':self.machst, 'rms':self.rms, 'nlabl':self.nlabl}
+
+    def header_test(self, header_bytes):
+        header = []
+        for i in HEADER_INFO:
+            header.append([i[0], struct.unpack(i[1], header_bytes[i[2]:i[3]])])
+        print(header)
+
 
 
     @property
     def _pxsize(self):
-        self.pxsize = self.cella[0] / self.nx[0]
+        self.pxsize = self.header['cella'][0] / self.header['nx'][0]
         return self.pxsize
 
     @property
-    def _data_mode(self):
+    def _data_type(self):
         """
         bytes 13-16 = mode:
         0 8-bit signed integer (range -128 to 127)
@@ -170,28 +201,27 @@ class mrc:
         """
         self.dtype = None
 
-        if self.mode[0] == 0:
+        if self.header['mode'][0] == 0:
             self.dtype = np.int8
 
-        elif self.mode[0] == 1:
+        elif self.header['mode'][0] == 1:
             self.dtype = np.int16
 
-        elif self.mode[0] == 2:
+        elif self.header['mode'][0] == 2:
             self.dtype = np.float32
 
-        elif self.mode[0] == 3:
-            # no native dtype, needs np.dtype([('re', np.int16), ('im', np.int16)])
+        elif self.header['mode'][0] == 3:
+            # no native complex int16 dtype, needs np.dtype([('re', np.int16), ('im', np.int16)])
             self.dtype = None
 
-        elif self.mode[0] == 4:
+        elif self.header['mode'][0] == 4:
             self.dtype = np.complex32
 
-        elif self.mode[0] == 6:
+        elif self.header['mode'][0] == 6:
             self.dtype = np.uint16
-
         else:
             raise ValueError('np.dtype: {}, mode: {} (mode 3 complex int16 is not supported)'.format(
-                self.dtype, self.mode[0]))
+                self.dtype, self.header['mode'][0]))
 
         return self.dtype
 
@@ -200,20 +230,22 @@ class mrc:
         """
         check whether or not the mrc file has size expected from header
         """
-        image_size = self.nx[0] * self.ny[0] * \
-            self.nz[0] * np.dtype(self.dtype).itemsize
-        expected_size = self.header_size + image_size
+        # fails for 2d images, mult by 0
+
+        image_size = self.header['nx'][0] * self.header['ny'][0] * \
+            self.header['nz'][0] * np.dtype(self.dtype).itemsize
+        expected_size = self.header_end + image_size
         file_size = os.path.getsize(self.path)
 
         print('check file size:')
-        print('header: {}'.format(self.header_size))
+        print('header: {}'.format(self.header_end))
         print('image: {} ({},{},{},{} bytes)'.format(
-            image_size, self.nx[0], self.ny[0], self.nz[0], np.dtype(self.dtype).itemsize))
+            image_size, self.header['nx'][0], self.header['ny'][0], self.header['nz'][0], np.dtype(self.dtype).itemsize))
         print('expected size = {}, actual size = {}'.format(
             expected_size, file_size))
         if expected_size != file_size:
             raise ValueError(
-                'file size not matching header info!!! file: {}'.format(self.path))
+                'file size not matching header info!!! file: {} image_size: {}'.format(self.path, image_size))
 
     @property
     def headerprint(self):
@@ -227,15 +259,37 @@ class mrc:
         """
         returns slice of img from [x_coord, x_coord+width]
         """
+        print(img.shape)
+        nx, ny = img.shape
+
         to_x = from_x + width
-        if to_x < self.nx[0]:
+        if to_x < self.header['nx'][0]:
             return img[:, from_x:to_x]
         else:
-            ValueError('slice width is outside of image, nx: {}, from_x: {}, to_x: {}'.format(
-                self.nx, from_x, to_x))
+            ValueError('slice width is outside of image, nx: {}, from_x: {}, to_x: {}'.format(nx, from_x, to_x))
+
 
     def get_mode(self, data_type):
-        pass
+        MODE = []
+        mode = None
+        if data_type == np.int8:
+            mode = 0
+        if data_type == np.int16:
+            mode = 1
+        if data_type == np.float32:
+            mode = 2
+        if data_type == np.complex64:
+            mode = 4
+        if data_type == np.uint16:
+            mode = 6
+        if data_type == None:
+            raise ValueError('data type is: {}'.format(data_type))
+        if mode != None:
+            return mode
+        else:
+            raise ValueError('mode not found for data type: {}'.format(data_type))
+
+
 
     def write_mrc(self, img):
         # construct header
@@ -248,18 +302,21 @@ class mrc:
         # except AttributeError:
         #     print('no opened img')
 
-        header_args = dict.fromkeys(['nx', 'ny', 'nz', 'mode', 'nxstart', 'nystart', 'nzstart', 
+        # header_args
+        ha = dict.fromkeys(['nx', 'ny', 'nz', 'mode', 'nxstart', 'nystart', 'nzstart', 
             'mx', 'my', 'mz', 'cella', 'cellb', 'mapc', 'mapr', 'maps', 'dmin', 'dmax', 'mean', 
-            'ispg', 'nsymbt', 'exttyp', 'nversion', 'origin', 'mapstr', 'machst', 'rms', 'nlabl'])
+            'ispg', 'nsymbt', 'exttyp', 'nversion', 'origin', 'map', 'machst', 'rms', 'nlabl'])
 
-        print('header args')
-        print(header_args)
+        # print('header args')
+        # print(header_args)
         # header_args = {'nx':None, 'ny':None, 'nz':None}
 
-        for key, value in self.__dict__.items():
-            if key in header_args:
-                header_args[key] = value
-        print(header_args)
+        # # update header from attributes
+        for key, value in self.header.items():
+            if key in ha:
+                ha[key] = value
+        print(ha)
+
 
         # header should it be **args, *kwargs, list, dict
         # want to avoid typing in several time all the attributes
@@ -275,45 +332,84 @@ class mrc:
     #     return struct.pack(self._endian + fmt, *values)
 
 
+        # things inherited from opening mrc, what are the defaults?
+
+
+        # things calculated for new image
         # dimension .shape
-        nx, ny, nz = img.shape
+        nx, ny = img.shape
+        nz = 0
         # mode
-        mode = 2
+        mode = self.get_mode(img.dtype)
 
-        header_args['nx'] = nx
-        print(nx, header_args)
+        # header_args['nx'] = nx
+        # print(nx, header_args)
 
-        dmin = img.shape
+        dmin = np.amin(img)
+        dmax = np.amax(img)
+        mean = np.mean(img)
+
+        ha['nx'] = nx
+        ha['ny'] = ny
+        ha['nz'] = 1
+        ha['mode'] = self.get_mode(img.dtype)
+        ha['nxstart'] = self.header['nxstart'][0]
+        ha['nystart'] = self.header['nystart'][0]
+        ha['nzstart'] = self.header['nzstart'][0]
+        ha['mx'] = nx
+        ha['my'] = ny
+        ha['mz'] = 1
+        ha['cella'] = (self.pxsize * nx, self.pxsize * ny, 0)
+        ha['cellb'] = (90.0, 90.0, 0)
+        ha['dmin'] = np.amin(img)
+        ha['dmax'] = np.amax(img)
+        ha['mean'] = np.mean(img)
+        ha['nversion'] = 20140  # mrc 2014, version 0
+        ha['rms'] = np.sqrt(np.mean(np.square(img)))
 
         # can pack the statements in a function to have less code
 
-        struct.pack_into('@i', frame, 0, nx)
-        struct.pack_into('@i', frame, 4, ny)
-        struct.pack_into('@i', frame, 8, nz)
-        struct.pack_into('@i', frame, 12, mode)
-        # struct.pack_into('@i', frame, 16, nxstart)
-        # struct.pack_into('@i', frame, 20, nystart)
-        # struct.pack_into('@i', frame, 24, nzstart)
-        # struct.pack_into('@i', frame, 28, mx)
-        # struct.pack_into('@i', frame, 32, my)
-        # struct.pack_into('@i', frame, 36, mz)
-        # struct.pack_into('@3f', frame, 40, cella)
-        # struct.pack_into('@3f', frame, 52, cellb)
-        # struct.pack_into('@i', frame, 64, mapc)
-        # struct.pack_into('@i', frame, 68, mapr)
-        # struct.pack_into('@i', frame, 72, maps)
-        # struct.pack_into('@f', frame, 76, dmin)
-        # struct.pack_into('@f', frame, 80, dmax)
-        # struct.pack_into('@f', frame, 84, mean)
-        # struct.pack_into('@i', frame, 88, ispg)
-        # struct.pack_into('@i', frame, 92, nsymbt)
-        # struct.pack_into('@4c', frame, 104, exttyp)
-        # struct.pack_into('@i', frame, 108, nversion)  # ...
-        # struct.pack_into('@3f', frame, 196, origin)
-        # struct.pack_into('@4s', frame, 208, mapstr)
-        # struct.pack_into('@4s', frame, 212, machst)  # endiannes
-        # struct.pack_into('@f', frame, 216, rms)
-        # struct.pack_into('@i', frame, 220, nlabl)
+        # for i in HEADER_INFO:
+        #     print(i)
+        #     struct.pack_into(i[1], frame, i[2], ha[i[0]])
+        print(ha['map'])
+
+        struct.pack_into('@i', frame, 0, ha['nx'])
+        struct.pack_into('@i', frame, 4, ha['ny'])
+        struct.pack_into('@i', frame, 8, ha['nz'])
+        struct.pack_into('@i', frame, 12, ha['mode'])
+        struct.pack_into('@i', frame, 16, ha['nxstart'])
+        struct.pack_into('@i', frame, 20, ha['nystart'])
+        struct.pack_into('@i', frame, 24, ha['nzstart'])
+        struct.pack_into('@i', frame, 28, ha['mx'])
+        struct.pack_into('@i', frame, 32, ha['my'])
+        struct.pack_into('@i', frame, 36, ha['mz'])
+        struct.pack_into('@3f', frame, 40, ha['cella'][0], ha['cella'][1], ha['cella'][2])
+        struct.pack_into('@3f', frame, 52, ha['cellb'][0], ha['cellb'][1], ha['cellb'][2])
+        struct.pack_into('@i', frame, 64, ha['mapc'][0])
+        struct.pack_into('@i', frame, 68, ha['mapr'][0])
+        struct.pack_into('@i', frame, 72, ha['maps'][0])
+        struct.pack_into('@f', frame, 76, ha['dmin'])
+        struct.pack_into('@f', frame, 80, ha['dmax'])
+        struct.pack_into('@f', frame, 84, ha['mean'])
+        struct.pack_into('@i', frame, 88, ha['ispg'][0])
+        struct.pack_into('@i', frame, 92, ha['nsymbt'][0])
+        struct.pack_into('@4s', frame, 104, ha['exttyp'][0])
+        struct.pack_into('@i', frame, 108, ha['nversion'])
+        struct.pack_into('@3f', frame, 196, ha['origin'][0], ha['origin'][1], ha['origin'][2])
+        struct.pack_into('@4s', frame, 208, ha['map'][0])
+        struct.pack_into('@4s', frame, 212, ha['machst'][0])  # endiannes
+        struct.pack_into('@f', frame, 216, ha['rms'])
+        struct.pack_into('@i', frame, 220, ha['nlabl'][0])
+
+        self.header_test(frame)
+        new_file = frame + img.tobytes()  #.flatten()
+
+        pf = 'test_slice.mrc'
+        with open(pf, "wb") as f:
+            f.write(new_file)
+
+
 
 
 def linear_transformation(src, a):
@@ -332,12 +428,16 @@ def main():
     path = '/home/martin/wrk/run87_class001.mrc'
     test = mrc()
     test.read_mrc(path)
-    sl = test.make_slice(test.img, 20, 20)
+    sl = test.make_slice(test.img[80], 20, 20)
     test.write_mrc(sl)    
     # print(test.headerprint)
 
+
+    pf = '/home/martin/wrk/test/test_slice.mrc'
     # # image display
-    # plt.pyplot.imshow(test.img[80])
+    tt = mrc()
+    tt.read_mrc(pf)
+    # plt.pyplot.imshow(tt)
     # plt.pyplot.gray()
     # plt.pyplot.show()
 
@@ -361,12 +461,15 @@ def main():
     # plt.imshow(dst)
     # plt.show()
 
-    print(test.header)
+    plt.imshow(tt.img)
+    plt.show()
 
-    for i in HEADER_INFO:
-        print(i)
-        # print(_unpack(i[3], test.mrc_file, i[1], i[2]))
-    print(test.header)
+    # print(test.header)
+
+    # for i in HEADER_INFO:
+    #     print(i)
+    #     # print(_unpack(i[3], test.mrc_file, i[1], i[2]))
+    # print(test.header)
 
 if __name__ == "__main__":
     main()
