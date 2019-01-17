@@ -1,11 +1,9 @@
 # routines for reading, writing mrc files
 
-
 import os
 import struct
 import numpy as np
 import matplotlib.pylab as plt
-#import matplotlib.pyplot as plt
 from PIL import Image
 import io
 
@@ -101,11 +99,12 @@ class mrc:
         # read heder, determine where header, extender header end
         # return header, image
         self.mrc_file = mrc_file
+
         # header
         self._header_new(mrc_file)
-        self._header(mrc_file)
+        # self._header(mrc_file)
         self._pxsize
-        self._data_type
+        self._get_data_type
         self._check_size
 
         # read image
@@ -114,39 +113,52 @@ class mrc:
 
         # spacegroup for EM: image or volume
         # nx, ny, nz is in numpy array nz, ny, nx
-        spacegroup = self.header['ispg'][0]
+        spacegroup = self.header['ispg']
         if spacegroup == 0 and self.header['nz'] == 1:
             # single image
-            self.img = np.reshape(image, (self.header['ny'][0], self.header['nx'][0]))
+            self.img = np.reshape(image, (self.header['ny'], self.header['nx']))
 
         elif spacegroup == 0 and self.header['nz'] != 1:
             # image stack
-            self.img = np.reshape(image, (self.header['ny'][0], self.header['nx'][0]))
+            self.img = np.reshape(image, (self.header['ny'], self.header['nx']))
         elif spacegroup == 401:
             # EM volume
-            self.img = np.reshape(image, (self.header['nz'][0], self.header['ny'][0], self.header['nx'][0]))
+            self.img = np.reshape(image, (self.header['nz'], self.header['ny'], self.header['nx']))
         print('read img data', self.img.shape)
+        # when does it make sense to return attribute
         # return self.img
 
     def _header_new(self, mrc_file):
+        """
+        stores header: .header {key:value}
+        extended header: .header_extended
+        end of header: .header_end
+        """
+        # header
+        # could have made my life easier with multiples of 4 and struct.unpack_from
+
         header = dict.fromkeys([i[0] for i in HEADER_INFO])
         for i in HEADER_INFO:
-            header[i[0]] = struct.unpack(i[1], mrc_file[i[2]:i[3]])
+            if len(i[1]) == 1: # to not have tuples of length 1: (value,) -> value
+                header[i[0]] = struct.unpack(i[1], mrc_file[i[2]:i[3]])[0]
+            else:
+                header[i[0]] = struct.unpack(i[1], mrc_file[i[2]:i[3]])
+
         self.header = header
 
         # extended header
-        if header['nsymbt'][0] != 0:
-            self.header_extended = mrc_file[1024:(1024 + header['nsymbt'][0])]
-        elif header['nsymbt'][0] == 0:
+        if header['nsymbt'] != 0:
+            self.header_extended = mrc_file[1024:(1024 + header['nsymbt'])]
+        elif header['nsymbt'] == 0:
             self.header_extended = None
         else:
             raise ValueError('Extended header not defined in mrc! nsymbt: {}'.format(header['nsymbt']))
 
-        # image data begins after
-        self.header_end = 1024 + header['nsymbt'][0]
+        # image data begins at
+        self.header_end = 1024 + header['nsymbt']
 
 
-    def _header(self, mrc_file):
+    def _header_obsolete(self, mrc_file):
         # convention from http://www.ccpem.ac.uk/mrc_format/mrc2014.php#note8
         self.nx = struct.unpack('@i', mrc_file[0:4])
         self.ny = struct.unpack('@i', mrc_file[4:8])
@@ -195,23 +207,15 @@ class mrc:
         #                'exttyp':self.exttyp, 'nversion':self.nversion, 'origin':self.origin,
         #                'map':self.map, 'machst':self.machst, 'rms':self.rms, 'nlabl':self.nlabl}
 
-    def header_test(self, header_bytes):
-        header = []
-        for i in HEADER_INFO:
-            header.append([i[0], struct.unpack(i[1], header_bytes[i[2]:i[3]])])
-        print(header)
-
-
-
     @property
     def _pxsize(self):
-        self.pxsize = self.header['cella'][0] / self.header['nx'][0]
+        self.pxsize = self.header['cella'][0] / self.header['nx']
         return self.pxsize
 
     @property
-    def _data_type(self):
+    def _get_data_type(self):
         """
-        bytes 13-16 = mode:
+        header bytes 13-16 = mode:
         0 8-bit signed integer (range -128 to 127)
         1 16-bit signed integer
         2 32-bit signed real
@@ -219,87 +223,37 @@ class mrc:
         4 transform : complex 32-bit reals
         6 16-bit unsigned integer
         """
-        self.dtype = None
+        dtype = None
+        if self.header['mode'] == 0:
+            dtype = np.int8
 
-        if self.header['mode'][0] == 0:
-            self.dtype = np.int8
+        elif self.header['mode'] == 1:
+            dtype = np.int16
 
-        elif self.header['mode'][0] == 1:
-            self.dtype = np.int16
+        elif self.header['mode'] == 2:
+            dtype = np.float32
 
-        elif self.header['mode'][0] == 2:
-            self.dtype = np.float32
-
-        elif self.header['mode'][0] == 3:
+        elif self.header['mode'] == 3:
             # no native complex int16 dtype, needs np.dtype([('re', np.int16), ('im', np.int16)])
-            self.dtype = None
+            dtype = None
 
-        elif self.header['mode'][0] == 4:
-            self.dtype = np.complex32
+        elif self.header['mode'] == 4:
+            dtype = np.complex32
 
-        elif self.header['mode'][0] == 6:
-            self.dtype = np.uint16
+        elif self.header['mode'] == 6:
+            dtype = np.uint16
         else:
             raise ValueError('np.dtype: {}, mode: {} (mode 3 complex int16 is not supported)'.format(
-                self.dtype, self.header['mode'][0]))
+                dtype, self.header['mode']))
 
-        return self.dtype
-
-    @property
-    def _check_size(self):
-        """
-        check whether or not the mrc file has size expected from header
-        """
-        # fails for 2d images, mult by 0
-
-        image_size = self.header['nx'][0] * self.header['ny'][0] * \
-            self.header['nz'][0] * np.dtype(self.dtype).itemsize
-        expected_size = self.header_end + image_size
-        file_size = os.path.getsize(self.path)
-
-        print('check file size:')
-        print('header: {}'.format(self.header_end))
-        print('header extended: {}'.format(self.header_extended))
-        print('image: {} ({},{},{},{} bytes)'.format(
-            image_size, self.header['nx'][0], self.header['ny'][0], self.header['nz'][0], np.dtype(self.dtype).itemsize))
-        print('expected size = {}, actual size = {}'.format(
-            expected_size, file_size))
-        if expected_size != file_size:
-            raise ValueError(
-                'file size not matching header info!!! file: {} image_size: {}'.format(self.path, image_size))
-
-    @property
-    def headerprint(self):
-        # keys = []
-        for key, value in self.__dict__.items():
-            print(key, ':', value)
-        #     keys.append([key, value])
-        # return self.__dict__
-
-    def make_slice(self, img, from_x, width):
-        """
-        returns slice of img from [x_coord, x_coord+width]
-        """
-        print('\nimg debug')
-        print(img.shape)
-        nx, ny = img.shape
-        # im = img.reshape(nx, ny)
-        # img = np.flip(img, 1)
-        # nx, ny = img.squeeze().shape
-        print(nx, ny)
-        # print(img.squeeze()[:,0:3709].shape)
-        
-        to_x = from_x + width
-        if to_x < self.header['nx'][0]:
-            # return img
-            # return img[:, :3709, :]
-            return img[:, from_x:to_x]
-        else:
-            ValueError('slice width is outside of image, nx: {}, from_x: {}, to_x: {}'.format(nx, from_x, to_x))
-
+        self.dtype = dtype
+        # return self.dtype
 
     def get_mode(self, data_type):
-        MODE = []
+        """
+        data type of the mrc data
+        returns mode [0,..,6] for writing a new mrc header
+        """
         mode = None
         if data_type == np.int8:
             mode = 0
@@ -317,6 +271,58 @@ class mrc:
             return mode
         else:
             raise ValueError('mode not found for data type: {}'.format(data_type))
+
+
+    @property
+    def _check_size(self):
+        """
+        check whether or not the mrc file has size expected from header
+        """
+        # fails for 2d images, mult by 0
+
+        image_size = self.header['nx'] * self.header['ny'] * \
+            self.header['nz'] * np.dtype(self.dtype).itemsize
+        expected_size = self.header_end + image_size
+        file_size = os.path.getsize(self.path)
+
+        print('check file size:')
+        print('header: {}'.format(self.header_end))
+        print('header extended: {}'.format(self.header_extended))
+        print('image: {} ({},{},{},{} bytes)'.format(
+            image_size, self.header['nx'], self.header['ny'], self.header['nz'], np.dtype(self.dtype).itemsize))
+        print('expected size = {}, actual size = {}'.format(
+            expected_size, file_size))
+        if expected_size != file_size:
+            raise ValueError(
+                'file size not matching header info!!! file: {} image_size: {}'.format(self.path, image_size))
+
+    def header_print(self):
+        for l in HEADER_INFO:
+            key = l[0]
+            print(key, ':', self.header[key])
+
+
+    def make_slice(self, img, from_x, width):
+        """
+        returns slice of img from [x_coord, x_coord+width]
+        """
+        print('\nimg debug')
+        print(img.shape)
+        nx, ny = img.shape
+        # im = img.reshape(nx, ny)
+        # img = np.flip(img, 1)
+        # nx, ny = img.squeeze().shape
+        print(nx, ny)
+        # print(img.squeeze()[:,0:3709].shape)
+        
+        to_x = from_x + width
+        if to_x < self.header['nx']:
+            # return img
+            # return img[:, :3709, :]
+            return img[:, from_x:to_x]
+        else:
+            ValueError('slice width is outside of image, nx: {}, from_x: {}, to_x: {}'.format(nx, from_x, to_x))
+
 
 
 
@@ -382,9 +388,9 @@ class mrc:
         ha['ny'] = ny
         ha['nz'] = nz
         ha['mode'] = self.get_mode(img.dtype)
-        ha['nxstart'] = self.header['nxstart'][0]
-        ha['nystart'] = self.header['nystart'][0]
-        ha['nzstart'] = self.header['nzstart'][0]
+        ha['nxstart'] = self.header['nxstart']
+        ha['nystart'] = self.header['nystart']
+        ha['nzstart'] = self.header['nzstart']
         ha['mx'] = nx
         ha['my'] = ny
         ha['mz'] = 1
@@ -394,7 +400,7 @@ class mrc:
         ha['dmax'] = np.amax(img)
         ha['mean'] = np.mean(img)
         ha['nversion'] = 20140  # mrc 2014, version 0
-        ha['map'] = bytes('MAP ', 'utf-8')
+        ha['map'] = bytes('MAP ', 'utf-8') # always 4 bytes, space after MAP
         ha['rms'] = np.std(img)
         # ha['rms'] = np.sqrt(np.mean(np.square(img)))
 
@@ -422,23 +428,23 @@ class mrc:
         struct.pack_into('@i', frame, 36, ha['mz'])
         struct.pack_into('@3f', frame, 40, ha['cella'][0], ha['cella'][1], ha['cella'][2])
         struct.pack_into('@3f', frame, 52, ha['cellb'][0], ha['cellb'][1], ha['cellb'][2])
-        struct.pack_into('@i', frame, 64, ha['mapc'][0])
-        struct.pack_into('@i', frame, 68, ha['mapr'][0])
-        struct.pack_into('@i', frame, 72, ha['maps'][0])
+        struct.pack_into('@i', frame, 64, ha['mapc'])
+        struct.pack_into('@i', frame, 68, ha['mapr'])
+        struct.pack_into('@i', frame, 72, ha['maps'])
         struct.pack_into('@f', frame, 76, ha['dmin'])
         struct.pack_into('@f', frame, 80, ha['dmax'])
         struct.pack_into('@f', frame, 84, ha['mean'])
-        struct.pack_into('@i', frame, 88, ha['ispg'][0])
-        struct.pack_into('@i', frame, 92, ha['nsymbt'][0])
+        struct.pack_into('@i', frame, 88, ha['ispg'])
+        struct.pack_into('@i', frame, 92, ha['nsymbt'])
         struct.pack_into('@4s', frame, 104, ha['exttyp'][0])
         struct.pack_into('@i', frame, 108, ha['nversion'])
         struct.pack_into('@3f', frame, 196, ha['origin'][0], ha['origin'][1], ha['origin'][2])
         struct.pack_into('@4s', frame, 208, ha['map'])
         struct.pack_into('@4s', frame, 212, ha['machst'][0])  # endiannes
         struct.pack_into('@f', frame, 216, ha['rms'])
-        struct.pack_into('@i', frame, 220, ha['nlabl'][0])
+        struct.pack_into('@i', frame, 220, ha['nlabl'])
 
-        self.header_test(frame)
+        self.header_print()
         print(img.shape)
         new_file = frame + img.tobytes()  #.flatten()
 
