@@ -37,7 +37,7 @@ HEADER_INFO = (
     ('mean', 'i', 84, 88),
     ('ispg', 'i', 88, 92),
     ('nsymbt', 'i', 92, 96),
-    ('exttyp', '4s', 104, 108),
+    ('exttyp', '4c', 104, 108),
     ('nversion', 'i', 108, 112),
     ('origin', '3f', 196, 208),
     ('map', '4s', 208, 212),
@@ -45,12 +45,6 @@ HEADER_INFO = (
     ('rms', 'f', 216, 220),
     ('nlabl', 'i', 220, 224))
 
-SPACEGROUP = {
-# header ISPG space group number
-    'image_or_imagestack':0,
-    'volumeEM_ET':1,
-    'volume_stack':401
-    }
 
 class mrc:
     """
@@ -108,24 +102,10 @@ class mrc:
         self._data_type
         self._check_size
 
-        # read image
+
         image = np.frombuffer(mrc_file, dtype=self.dtype,
                               count=-1, offset=self.header_end)
-
-        # spacegroup for EM: image or volume
-        # nx, ny, nz is in numpy array nz, ny, nx
-        spacegroup = self.header['ispg'][0]
-        if spacegroup == 0 and self.header['nz'] == 1:
-            # single image
-            self.img = np.reshape(image, (self.header['ny'][0], self.header['nx'][0]))
-
-        elif spacegroup == 0 and self.header['nz'] != 1:
-            # image stack
-            self.img = np.reshape(image, (self.header['ny'][0], self.header['nx'][0]))
-        elif spacegroup == 401:
-            # EM volume
-            self.img = np.reshape(image, (self.header['nz'][0], self.header['ny'][0], self.header['nx'][0]))
-        print('read img data', self.img.shape)
+        self.img = np.reshape(image, (self.header['nx'][0], self.header['ny'][0], self.header['nz'][0]))
         # return self.img
 
     def _header_new(self, mrc_file):
@@ -259,7 +239,6 @@ class mrc:
 
         print('check file size:')
         print('header: {}'.format(self.header_end))
-        print('header extended: {}'.format(self.header_extended))
         print('image: {} ({},{},{},{} bytes)'.format(
             image_size, self.header['nx'][0], self.header['ny'][0], self.header['nz'][0], np.dtype(self.dtype).itemsize))
         print('expected size = {}, actual size = {}'.format(
@@ -280,19 +259,11 @@ class mrc:
         """
         returns slice of img from [x_coord, x_coord+width]
         """
-        print('\nimg debug')
         print(img.shape)
         nx, ny = img.shape
-        # im = img.reshape(nx, ny)
-        # img = np.flip(img, 1)
-        # nx, ny = img.squeeze().shape
-        print(nx, ny)
-        # print(img.squeeze()[:,0:3709].shape)
-        
+
         to_x = from_x + width
         if to_x < self.header['nx'][0]:
-            # return img
-            # return img[:, :3709, :]
             return img[:, from_x:to_x]
         else:
             ValueError('slice width is outside of image, nx: {}, from_x: {}, to_x: {}'.format(nx, from_x, to_x))
@@ -366,8 +337,8 @@ class mrc:
 
         # things calculated for new image
         # dimension .shape
-        ny, nx = img.shape
-        nz = 1
+        nx, ny = img.shape
+        nz = 0
         # mode
         mode = self.get_mode(img.dtype)
 
@@ -380,7 +351,7 @@ class mrc:
 
         ha['nx'] = nx
         ha['ny'] = ny
-        ha['nz'] = nz
+        ha['nz'] = 1
         ha['mode'] = self.get_mode(img.dtype)
         ha['nxstart'] = self.header['nxstart'][0]
         ha['nystart'] = self.header['nystart'][0]
@@ -388,21 +359,14 @@ class mrc:
         ha['mx'] = nx
         ha['my'] = ny
         ha['mz'] = 1
-        ha['cella'] = (self.pxsize * nx, self.pxsize * ny, self.pxsize * ha['mz'])
-        ha['cellb'] = (90.0, 90.0, 90.0)
+        ha['cella'] = (self.pxsize * nx, self.pxsize * ny, 0)
+        ha['cellb'] = (90.0, 90.0, 0)
         ha['dmin'] = np.amin(img)
         ha['dmax'] = np.amax(img)
         ha['mean'] = np.mean(img)
         ha['nversion'] = 20140  # mrc 2014, version 0
-        ha['map'] = bytes('MAP ', 'utf-8')
-        ha['rms'] = np.std(img)
-        # ha['rms'] = np.sqrt(np.mean(np.square(img)))
+        ha['rms'] = np.sqrt(np.mean(np.square(img)))
 
-        print(np.square(img))
-        print(np.mean(np.square(img)))
-        print(np.sqrt(np.mean(img)))
-        print(img.std)
-        print(np.std(img))
         # can pack the statements in a function to have less code
 
         # for i in HEADER_INFO:
@@ -433,13 +397,12 @@ class mrc:
         struct.pack_into('@4s', frame, 104, ha['exttyp'][0])
         struct.pack_into('@i', frame, 108, ha['nversion'])
         struct.pack_into('@3f', frame, 196, ha['origin'][0], ha['origin'][1], ha['origin'][2])
-        struct.pack_into('@4s', frame, 208, ha['map'])
+        struct.pack_into('@4s', frame, 208, ha['map'][0])
         struct.pack_into('@4s', frame, 212, ha['machst'][0])  # endiannes
         struct.pack_into('@f', frame, 216, ha['rms'])
         struct.pack_into('@i', frame, 220, ha['nlabl'][0])
 
         self.header_test(frame)
-        print(img.shape)
         new_file = frame + img.tobytes()  #.flatten()
 
         pf = 'test_slice.mrc'
@@ -459,30 +422,28 @@ def linear_transformation(src, a):
     return np.take(src, indices, mode='wrap')
 
 
-def test_image_read_write():
-    import os
-
-
 def main():
 
-    # path = '/Users/martin/wrk/0001.mrc'
-    path = '/home/martin/wrk/test_mrc/0001.mrc'
+    # path = '/Users/martin/wrk/run1.mrc'
     # path = '/home/martin/wrk/run87_class001.mrc'
+    path = '/home/martin/wrk/test_mrc/0001.mrc'
     test = mrc()
     test.read_mrc(path)
-    sl = test.make_slice(test.img, 3000, 700)
+    sl = test.make_slice(test.img.squeeze(), 0, 3709)
+    plt.imshow(sl)
+    plt.gray()
+    plt.show()
     test.write_mrc(sl)    
     # print(test.headerprint)
 
 
-    # pf = '/Users/martin/wrk/test/test_slice.mrc'
     pf = '/home/martin/wrk/test/test_slice.mrc'
     # # image display
     tt = mrc()
     tt.read_mrc(pf)
-    plt.imshow(tt.img)
-    plt.gray()
-    plt.show()
+    # plt.pyplot.imshow(tt)
+    # plt.pyplot.gray()
+    # plt.pyplot.show()
 
     # add stripes, make band
     # write out mrc
@@ -504,13 +465,8 @@ def main():
     # plt.imshow(dst)
     # plt.show()
 
-    my_dpi = 96
-
-    print(tt.img.shape)
-    # plt.figure(figsize=(tt.img.shape[0]/my_dpi/3, tt.img.shape[1]/my_dpi/3), dpi=my_dpi)
-    # plt.imshow(tt.img.squeeze())
-    # plt.gray()
-    # plt.show()
+    plt.imshow(tt.img.squeeze())
+    plt.show()
 
     # print(test.header)
 
