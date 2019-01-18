@@ -14,7 +14,7 @@ HEADER = ('nx', 'ny', 'nz', 'mode', 'nxstart', 'nystart', 'nzstart',
 
 
 HEADER_INFO = (
-# (variable, start byte , end byte, data type)
+# (variable, data typestart byte , end byte)
     ('nx', 'i', 0, 4), 
     ('ny', 'i', 4, 8),
     ('nz', 'i', 8, 12),
@@ -83,10 +83,13 @@ class mrc:
     54 213–216 Char MACHSTMachine stamp
     55 217–220 Float32 RMSRMS deviation of map from mean density
     """
+    def __init__(self):
+        self.header = None
+        self.header_extended = None
+        self.img = None
 
     def _unpack(self, fmt, data, start, end):
         return struct.unpack(fmt, data[start:end])
-
 
     def read_mrc(self, path):
         """
@@ -125,6 +128,7 @@ class mrc:
             # EM volume
             self.img = np.reshape(image, (self.header['nz'], self.header['ny'], self.header['nx']))
         print('read img data', self.img.shape)
+
         # when does it make sense to return attribute
         # return self.img
 
@@ -138,11 +142,13 @@ class mrc:
         # could have made my life easier with multiples of 4 and struct.unpack_from
 
         header = dict.fromkeys([i[0] for i in HEADER_INFO])
+
         for i in HEADER_INFO:
-            if len(i[1]) == 1: # to not have tuples of length 1: (value,) -> value
-                header[i[0]] = struct.unpack(i[1], mrc_file[i[2]:i[3]])[0]
+            variable, data_type, start_byte, end_byte = i
+            if len(data_type) == 1: # to not have tuples of length 1: (value,) -> value
+                header[variable] = struct.unpack(data_type, mrc_file[start_byte:end_byte])[0]
             else:
-                header[i[0]] = struct.unpack(i[1], mrc_file[i[2]:i[3]])
+                header[variable] = struct.unpack(data_type, mrc_file[start_byte:end_byte])
 
         self.header = header
 
@@ -249,7 +255,7 @@ class mrc:
         self.dtype = dtype
         # return self.dtype
 
-    def get_mode(self, data_type):
+    def _get_mode(self, data_type):
         """
         data type of the mrc data
         returns mode [0,..,6] for writing a new mrc header
@@ -302,56 +308,20 @@ class mrc:
             print(key, ':', self.header[key])
 
 
-    def make_slice(self, img, from_x, width):
-        """
-        returns slice of img from [x_coord, x_coord+width]
-        """
-        print('\nimg debug')
-        print(img.shape)
-        nx, ny = img.shape
-        # im = img.reshape(nx, ny)
-        # img = np.flip(img, 1)
-        # nx, ny = img.squeeze().shape
-        print(nx, ny)
-        # print(img.squeeze()[:,0:3709].shape)
-        
-        to_x = from_x + width
-        if to_x < self.header['nx']:
-            # return img
-            # return img[:, :3709, :]
-            return img[:, from_x:to_x]
-        else:
-            ValueError('slice width is outside of image, nx: {}, from_x: {}, to_x: {}'.format(nx, from_x, to_x))
-
-
-
-
     def write_mrc(self, img, path):
         # construct header
         frame = bytearray(1024)
-        # struct.pack_into(fmt, buffer, offset, v1)
-
-        # get from read mrc if possible
-        # try:
-        #     print(self.__dict__)
-        # except AttributeError:
-        #     print('no opened img')
 
         # header_args
         ha = dict.fromkeys(['nx', 'ny', 'nz', 'mode', 'nxstart', 'nystart', 'nzstart', 
             'mx', 'my', 'mz', 'cella', 'cellb', 'mapc', 'mapr', 'maps', 'dmin', 'dmax', 'mean', 
             'ispg', 'nsymbt', 'exttyp', 'nversion', 'origin', 'map', 'machst', 'rms', 'nlabl'])
 
-        # print('header args')
-        # print(header_args)
-        # header_args = {'nx':None, 'ny':None, 'nz':None}
-
         # # update header from attributes
         for key, value in self.header.items():
             if key in ha:
                 ha[key] = value
         print(ha)
-
 
         # header should it be **args, *kwargs, list, dict
         # want to avoid typing in several time all the attributes
@@ -360,26 +330,22 @@ class mrc:
         # posittion and whole int and float types could be in a dictionary or list outside
 
 
-    # def _unpack(self, fmt, data):
-    #     return struct.unpack(self._endian + fmt, data)
+        # def _unpack(self, fmt, data):
+        #     return struct.unpack(self._endian + fmt, data)
 
-    # def _pack(self, fmt, *values):
-    #     return struct.pack(self._endian + fmt, *values)
-
-
-        # things inherited from opening mrc, what are the defaults?
+        # def _pack(self, fmt, *values):
+        #     return struct.pack(self._endian + fmt, *values)
 
 
         # things calculated for new image
         # dimension .shape
-        ny, nx = img.shape
-        nz = 1
-        # mode
-        mode = self.get_mode(img.dtype)
+        if len(img.shape) == 2:
+            ny, nx = img.shape
+            nz = 1
+        elif len(img.shape) == 3: # volume or img stack
+            ny, nx, nz = img.shape # not tested
 
-        # header_args['nx'] = nx
-        # print(nx, header_args)
-
+        mode = self._get_mode(img.dtype)
         dmin = np.amin(img)
         dmax = np.amax(img)
         mean = np.mean(img)
@@ -387,13 +353,13 @@ class mrc:
         ha['nx'] = nx
         ha['ny'] = ny
         ha['nz'] = nz
-        ha['mode'] = self.get_mode(img.dtype)
+        ha['mode'] = self._get_mode(img.dtype)
         ha['nxstart'] = self.header['nxstart']
         ha['nystart'] = self.header['nystart']
         ha['nzstart'] = self.header['nzstart']
         ha['mx'] = nx
         ha['my'] = ny
-        ha['mz'] = 1
+        ha['mz'] = self.header['mz']
         ha['cella'] = (self.pxsize * nx, self.pxsize * ny, self.pxsize * ha['mz'])
         ha['cellb'] = (90.0, 90.0, 90.0)
         ha['dmin'] = np.amin(img)
@@ -409,13 +375,13 @@ class mrc:
         print(np.sqrt(np.mean(img)))
         print(img.std)
         print(np.std(img))
-        # can pack the statements in a function to have less code
 
+        # can pack the statements in a function to have less code
+        # if I do it multiples of 4, i can simplify it into:
         # for i in HEADER_INFO:
         #     print(i)
         #     struct.pack_into(i[1], frame, i[2], ha[i[0]])
-        print(ha['map'])
-
+        
         struct.pack_into('@i', frame, 0, ha['nx'])
         struct.pack_into('@i', frame, 4, ha['ny'])
         struct.pack_into('@i', frame, 8, ha['nz'])
@@ -445,11 +411,48 @@ class mrc:
         struct.pack_into('@i', frame, 220, ha['nlabl'])
 
         self.header_print()
-        print(img.shape)
-        new_file = frame + img.tobytes()  #.flatten()
+        new_file = frame + img.tobytes()
 
         with open(path, "wb") as f:
             f.write(new_file)
+
+    def make_slice(self, img, from_x, width):
+        """
+        returns slice of img from [x_coord, x_coord+width]
+        """
+        print('\nimg debug')
+        print(img.shape)
+        nx, ny = img.shape
+        # im = img.reshape(nx, ny)
+        # img = np.flip(img, 1)
+        # nx, ny = img.squeeze().shape
+        print(nx, ny)
+        # print(img.squeeze()[:,0:3709].shape)
+        
+        to_x = from_x + width
+        if to_x < self.header['nx']:
+            # return img
+            # return img[:, :3709, :]
+            return img[:, from_x:to_x]
+        else:
+            ValueError('slice width is outside of image, nx: {}, from_x: {}, to_x: {}'.format(nx, from_x, to_x))
+
+    def sliding_slices(self):
+        pass
+        # think over the steps for making slices
+        # a set of slices, with some overlap
+        # each new header
+        # new filename with number of slice
+        # call external gctf fitting
+        # read the text file output results
+        # when are results finished
+        # read the results to array
+        # fit a line to array defocus values
+
+        # gctf fitting on the whole image for comparison
+        # astigmatism values here and slices
+        
+
 
 def linear_transformation(src, a):
     # from https://mmas.github.io/linear-transformations-numpy
@@ -488,6 +491,7 @@ def test_image_read_write():
         plt.imshow(test2.img)
         plt.gray()
         plt.show()
+
 
 
 def main():
